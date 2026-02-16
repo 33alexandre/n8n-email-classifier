@@ -1,0 +1,225 @@
+{
+  "name": "AI Email Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -48,
+        0
+      ],
+      "id": "ba28969b-d016-4cf9-b501-d7b34b7af072",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "3DzRFw5nLoX3Xk2y",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-5-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=Você é um classificador de urgência de e-mails corporativos. Sua função é analisar o assunto e corpo e definir se o e-mail é URGENTE ou NORMAL.\n\nUse estas regras:\n\nURGENTE:\n- E-mails que envolvem senhas, códigos de verificação, recuperação de contas\n- Cartão de crédito, dados bancários, pagamentos ou cobranças críticas\n- Prazos imediatos, erros críticos em sistemas, solicitações de superiores\n- Qualquer situação que exija ação hoje ou imediatamente\n\nNORMAL:\n- Newsletters, boletins, comunicados internos rotineiros\n- Convites para reuniões com 24h+ de antecedência\n- Solicitações sem prazo ou que podem aguardar\n- Pesquisas de satisfação, promoções ou marketing não crítico\n\nEXEMPLOS (não inclua no output, são apenas referência):\n\n1. Assunto: Redefinição de senha do cartão → URGENTE\n2. Assunto: Pagamento vencendo hoje → URGENTE\n3. Assunto: Newsletter semanal → NORMAL\n4. Assunto: Confirmação de reunião futura → NORMAL\n\nResponda **APENAS** com um JSON válido:\n\n{\n  \"categoria\": \"pessoal\",\n  \"prioridade\": \"URGENTE\" ou \"NORMAL\"\n}\n\nE-MAIL PARA ANALISAR:\nAssunto: {{$json.subject}}\nRemetente: {{$json.from}}\nCorpo: {{$json.body}}\n\nCLASSIFICAÇÃO:\n"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "c7d43729-04a2-4833-a786-0e8a1d9857b8",
+      "name": "Message a model",
+      "credentials": {
+        "openAiApi": {
+          "id": "0fGwpgWOfpQyweq8",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pegar saída da IA, ou definir default NORMAL\nlet prioridade = $json.prioridade ? $json.prioridade.trim().toUpperCase() : \"NORMAL\";\n\n// Extrair assunto e corpo do e-mail\nconst assunto = ($node[\"Gmail Trigger\"].json[\"Subject\"] || \"\").toLowerCase();\nconst corpo = ($node[\"Gmail Trigger\"].json[\"BodyPlain\"] \n           || $node[\"Gmail Trigger\"].json[\"BodyHTML\"] \n           || $node[\"Gmail Trigger\"].json[\"snippet\"] \n           || \"\").toLowerCase();\n\n// Regras explícitas de URGÊNCIA\nconst palavrasUrgentes = [\n    \"senha\", \"código\", \"cartão\", \"pagamento\", \"boleto\", \"cobrança\", \n    \"urgente\", \"asap\", \"imediato\", \"agora\", \"cliente vip\"\n];\n\n// Se qualquer palavra crítica estiver no assunto ou corpo, força URGENTE\nfor (const palavra of palavrasUrgentes) {\n    if (assunto.includes(palavra) || corpo.includes(palavra)) {\n        prioridade = \"URGENTE\";\n        break;\n    }\n}\n\n// Fallback: se a IA retornou URGENTE, mantém; caso contrário, normal\nif (![\"URGENTE\",\"NORMAL\"].includes(prioridade)) {\n    prioridade = \"NORMAL\";\n}\n\nreturn [\n    {\n        json: {\n            categoria: \"pessoal\",\n            prioridade: prioridade,\n            assunto: $node[\"Gmail Trigger\"].json[\"Subject\"] || \"\",\n            remetente: $node[\"Gmail Trigger\"].json[\"From\"] || \"\",\n            corpo: corpo\n        }\n    }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        0
+      ],
+      "id": "90ab40ee-3bcb-4df6-8998-6c672331f4aa",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b339e6da-d00b-410a-9597-4e16daa5e792",
+              "leftValue": "={{$json[\"prioridade\"]}}",
+              "rightValue": "URGENTE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        832,
+        0
+      ],
+      "id": "7e93786b-dab4-4115-b532-5fcb5d220b7f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{$node[\"Gmail Trigger\"].json[\"id\"]}}",
+        "labelIds": [
+          "Label_1889722982637241335"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1072,
+        -144
+      ],
+      "id": "6568ab80-d47b-4938-9863-bf7a7be0e10e",
+      "name": "Add label to message",
+      "webhookId": "4c4cbe49-6432-4752-963d-ffe6c258d24a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "3DzRFw5nLoX3Xk2y",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{$node[\"Gmail Trigger\"].json[\"id\"]}}",
+        "labelIds": [
+          "Label_1663784636851678718"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1072,
+        144
+      ],
+      "id": "e9b63b24-2416-4e65-9aa1-99353c81c819",
+      "name": "Add label to message1",
+      "webhookId": "7e3d7201-4c53-4792-8471-dd450fb21dbc",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "3DzRFw5nLoX3Xk2y",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Add label to message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add label to message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "a5c0d46b-8e13-4663-ba69-37125826a8ef",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d00727b0947575ce9ddbbdf9237c8da8999a706663e572e3dc8a68310d5a4e42"
+  },
+  "id": "v9LlFYSXdzYsdLnG",
+  "tags": []
+}
